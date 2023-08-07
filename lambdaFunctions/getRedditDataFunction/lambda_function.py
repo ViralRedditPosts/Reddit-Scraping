@@ -10,7 +10,7 @@ dynamodb_resource = boto3.resource('dynamodb')
 
 def lambda_handler(event, context):
   # Initializations
-  subreddits = ["pics", "memes", "gaming", "worldnews", "news", "aww", "funny", "todayilearned", "movies"]
+  subreddits = ["pics", "gaming", "worldnews", "news", "aww", "funny", "todayilearned", "movies"]
 
   # cfg_file = cu.findConfig()
   cfg_file = 's3://data-kennethmyers/reddit.cfg'
