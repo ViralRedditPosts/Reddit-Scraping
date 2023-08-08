@@ -18,6 +18,7 @@ variable "info" {
   default = {
     name = "viralredditposts"
     env  = "dev"
+    pyversion = "3.7"
   }
 }
 
@@ -25,7 +26,7 @@ variable "info" {
 data "aws_caller_identity" "current" {}
 
 locals {
-    account_id = data.aws_caller_identity.current.account_id
+  account_id = data.aws_caller_identity.current.account_id
 }
 
 # zip the lambda function
@@ -36,23 +37,42 @@ resource "null_resource" "zip_function" {
   }
 }
 
-# zip the PRAW package
-resource "null_resource" "zip_PRAW" {
+# zip the PRAW and boto3 packages
+resource "null_resource" "zip_python_packages" {
+  # this a bit slow but this forces this to rerun each time, 
+  # it was easier than trying to get it to track if the zip was deleted for an environment change
+  triggers = {
+    build_number = timestamp()
+  }
   provisioner "local-exec" {
-    command    = "./scripts/zipPythonPackage.sh -p praw -s packages-${var.info.name}-${var.info.env}-${local.account_id}"
+    command    = "source venv/bin/activate && ./scripts/zipPythonPackage.sh -v ${var.info.pyversion} praw==7.7.0 boto3==1.26.117"
     on_failure = fail # OR continue
   }
 }
 
 # add PRAW zip to S3
 resource "aws_s3_object" "move_PRAW_zip" {
-  depends_on = [ null_resource.zip_PRAW ]
+  depends_on = [null_resource.zip_python_packages]
 
-  bucket = "packages-${var.info.name}-${var.info.env}-${local.account_id}" 
-  key    = "praw.zip"
-  source = "./scripts/zippedPythonPackages/praw/praw.zip"
+  bucket = "packages-${var.info.name}-${var.info.env}-${local.account_id}"
+  key    = "praw==7.7.0.zip"
+  source = "./scripts/zippedPythonPackages/praw==7.7.0/praw==7.7.0.zip"
   tags = {
     Name        = "praw-zip"
+    Environment = "${var.info.env}"
+    Project     = "viral-reddit-posts"
+  }
+}
+
+# add boto3 zip to S3
+resource "aws_s3_object" "move_boto3_zip" {
+  depends_on = [null_resource.zip_python_packages]
+
+  bucket = "packages-${var.info.name}-${var.info.env}-${local.account_id}"
+  key    = "boto3==1.26.117.zip"
+  source = "./scripts/zippedPythonPackages/boto3==1.26.117/boto3==1.26.117.zip"
+  tags = {
+    Name        = "boto3-zip"
     Environment = "${var.info.env}"
     Project     = "viral-reddit-posts"
   }
@@ -85,7 +105,7 @@ data "aws_iam_policy_document" "inline_policy" {
 # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role
 resource "aws_iam_role" "iam_for_lambda" {
   name               = "iam-for-lambda"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json  # Policy that grants an entity permission to assume the role.
+  assume_role_policy = data.aws_iam_policy_document.assume_role.json # Policy that grants an entity permission to assume the role.
 
   inline_policy {
     name   = "test-policy"
@@ -98,23 +118,49 @@ resource "aws_iam_role" "iam_for_lambda" {
   }
 }
 
+resource "aws_lambda_layer_version" "praw_layer" {
+  depends_on = [ aws_s3_object.move_PRAW_zip ]
+  # you either have to specify a local filename or the s3 object
+  # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_layer_version
+  # filename   = "lambda_layer_payload.zip"
+  s3_bucket                = "packages-${var.info.name}-${var.info.env}-${local.account_id}"
+  s3_key                   = "praw==7.7.0.zip"
+  layer_name               = "praw-7_7_0"
+  description              = "python binaries for praw==7.7.0 library"
+  compatible_architectures = ["x86_64"]
+  compatible_runtimes      = ["python${var.info.pyversion}"]
+}
+
+resource "aws_lambda_layer_version" "boto3_layer" {
+  depends_on = [ aws_s3_object.move_boto3_zip ]
+  # you either have to specify a local filename or the s3 object
+  # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_layer_version
+  # filename   = "lambda_layer_payload.zip"
+  s3_bucket                = "packages-${var.info.name}-${var.info.env}-${local.account_id}"
+  s3_key                   = "boto3==1.26.117.zip"
+  layer_name               = "boto3-1_26_117"
+  description              = "python binaries for pboto3==1.26.117 library"
+  compatible_architectures = ["x86_64"]
+  compatible_runtimes      = ["python${var.info.pyversion}"]
+}
+
 # make lambda function
 # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_function
 resource "aws_lambda_function" "test_lambda" {
-  depends_on = [
-    resource.null_resource.zip_function
-  ]
+  depends_on = [ resource.null_resource.zip_function ]
 
   filename      = "./scripts/zippedLambdaFunction/getRedditDataFunction.zip"
   function_name = "lambda-reddit-scraping-${var.info.env}"
   role          = aws_iam_role.iam_for_lambda.arn
   handler       = "lambda_function.lambda_handler"
-  runtime       = "python3.7"
+  runtime       = "python${var.info.pyversion}"
   timeout       = 60
 
   ephemeral_storage {
     size = 512 # Min 512 MB and the Max 10240 MB
   }
+
+  layers = [aws_lambda_layer_version.praw_layer.arn, aws_lambda_layer_version.boto3_layer.arn]
 
   tags = {
     Environment = "${var.info.env}"
