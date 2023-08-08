@@ -16,8 +16,8 @@ provider "aws" {
 variable "info" {
   type = map(string)
   default = {
-    name = "viralredditposts"
-    env  = "dev"
+    name      = "viralredditposts"
+    env       = "dev"
     pyversion = "3.7"
   }
 }
@@ -96,8 +96,15 @@ data "aws_iam_policy_document" "assume_role" {
 
 data "aws_iam_policy_document" "inline_policy" {
   statement {
-    actions   = ["s3:GetObject"]
-    resources = ["arn:aws:s3:::data-${var.info.name}-${var.info.env}/*"]
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:ListBucket"
+    ]
+    resources = [
+      "arn:aws:s3:::data-${var.info.name}-${var.info.env}-${local.account_id}",
+      "arn:aws:s3:::data-${var.info.name}-${var.info.env}-${local.account_id}/*"
+    ]
   }
 }
 
@@ -119,7 +126,7 @@ resource "aws_iam_role" "iam_for_lambda" {
 }
 
 resource "aws_lambda_layer_version" "praw_layer" {
-  depends_on = [ aws_s3_object.move_PRAW_zip ]
+  depends_on = [aws_s3_object.move_PRAW_zip]
   # you either have to specify a local filename or the s3 object
   # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_layer_version
   # filename   = "lambda_layer_payload.zip"
@@ -132,7 +139,7 @@ resource "aws_lambda_layer_version" "praw_layer" {
 }
 
 resource "aws_lambda_layer_version" "boto3_layer" {
-  depends_on = [ aws_s3_object.move_boto3_zip ]
+  depends_on = [aws_s3_object.move_boto3_zip]
   # you either have to specify a local filename or the s3 object
   # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_layer_version
   # filename   = "lambda_layer_payload.zip"
@@ -147,7 +154,7 @@ resource "aws_lambda_layer_version" "boto3_layer" {
 # make lambda function
 # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_function
 resource "aws_lambda_function" "test_lambda" {
-  depends_on = [ resource.null_resource.zip_function ]
+  depends_on = [resource.null_resource.zip_function]
 
   filename      = "./scripts/zippedLambdaFunction/getRedditDataFunction.zip"
   function_name = "lambda-reddit-scraping-${var.info.env}"
@@ -162,6 +169,11 @@ resource "aws_lambda_function" "test_lambda" {
 
   layers = [aws_lambda_layer_version.praw_layer.arn, aws_lambda_layer_version.boto3_layer.arn]
 
+  environment {
+    variables = {
+      AWS_BUCKET = "data-${var.info.name}-${var.info.env}-${local.account_id}"
+    }
+  }
   tags = {
     Environment = "${var.info.env}"
     Project     = "viral-reddit-posts"

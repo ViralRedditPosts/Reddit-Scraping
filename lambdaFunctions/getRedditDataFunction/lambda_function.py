@@ -3,6 +3,7 @@ import configUtils as cu
 import tableDefinition
 import praw
 import boto3
+import os
 
 
 dynamodb_resource = boto3.resource('dynamodb')
@@ -13,7 +14,7 @@ def lambda_handler(event, context):
   subreddits = ["pics", "gaming", "worldnews", "news", "aww", "funny", "todayilearned", "movies"]
 
   # cfg_file = cu.findConfig()
-  cfg_file = 's3://data-kennethmyers/reddit.cfg'
+  cfg_file = "s3://"+os.environ['AWS_BUCKET']+"/reddit.cfg" # ie 's3://data-kennethmyers/reddit.cfg'
   cfg = cu.parseConfig(cfg_file)
 
   CLIENTID = cfg['reddit_api']['CLIENTID']
