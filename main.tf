@@ -18,6 +18,7 @@ variable "info" {
   default = {
     name      = "viralredditposts"
     env       = "dev"
+    region    = "us-east-2"
     pyversion = "3.7"
   }
 }
@@ -30,11 +31,21 @@ locals {
 }
 
 # zip the lambda function
-resource "null_resource" "zip_function" {
-  provisioner "local-exec" {
-    command    = "./scripts/zipLambdaFunction.sh -f getRedditDataFunction"
-    on_failure = fail # OR continue
-  }
+# resource "null_resource" "zip_function" {
+#   # rebuild zip each time, this is low cost and good for forcing it to upload each terraform apply
+#   triggers = {
+#     build_number = timestamp()
+#   }
+#   provisioner "local-exec" {
+#     command    = "./scripts/zipLambdaFunction.sh -f getRedditDataFunction"
+#     on_failure = fail # OR continue
+#   }
+# }
+
+data "archive_file" "lambda_zip" {
+  type        = "zip"
+  source_dir  = "./lambdaFunctions/getRedditDataFunction/"
+  output_path = "./scripts/zippedLambdaFunction/getRedditDataFunction.zip"
 }
 
 # zip the PRAW and boto3 packages
@@ -45,7 +56,7 @@ resource "null_resource" "zip_python_packages" {
     build_number = timestamp()
   }
   provisioner "local-exec" {
-    command    = "source venv/bin/activate && ./scripts/zipPythonPackage.sh -v ${var.info.pyversion} praw==7.7.0 boto3==1.26.117"
+    command    = "source venv/bin/activate && ./scripts/zipPythonPackage.sh -v ${var.info.pyversion} praw==7.7.0 boto3==1.26.117 git+https://github.com/ViralRedditPosts/Utils.git@main"
     on_failure = fail # OR continue
   }
 }
@@ -78,6 +89,20 @@ resource "aws_s3_object" "move_boto3_zip" {
   }
 }
 
+# add git+https://github.com/ViralRedditPosts/Utils.git@main to S3
+resource "aws_s3_object" "move_utils_zip" {
+  depends_on = [null_resource.zip_python_packages]
+
+  bucket = "packages-${var.info.name}-${var.info.env}-${local.account_id}"
+  key    = "Utils.git@main.zip"
+  source = "./scripts/zippedPythonPackages/Utils.git@main/Utils.git@main.zip"
+  tags = {
+    Name        = "utils-zip"
+    Environment = "${var.info.env}"
+    Project     = "viral-reddit-posts"
+  }
+}
+
 # define policy for attaching role
 data "aws_iam_policy_document" "assume_role" {
   statement {
@@ -99,11 +124,15 @@ data "aws_iam_policy_document" "inline_policy" {
     effect = "Allow"
     actions = [
       "s3:GetObject",
-      "s3:ListBucket"
+      "s3:ListBucket",
+      "dynamodb:DescribeTable",
+      "dynamodb:BatchWriteItem"
     ]
     resources = [
       "arn:aws:s3:::data-${var.info.name}-${var.info.env}-${local.account_id}",
-      "arn:aws:s3:::data-${var.info.name}-${var.info.env}-${local.account_id}/*"
+      "arn:aws:s3:::data-${var.info.name}-${var.info.env}-${local.account_id}/*",
+      "arn:aws:dynamodb:${var.info.region}:${local.account_id}:table/hot-${var.info.env}",
+      "arn:aws:dynamodb:${var.info.region}:${local.account_id}:table/rising-${var.info.env}"
     ]
   }
 }
@@ -146,15 +175,28 @@ resource "aws_lambda_layer_version" "boto3_layer" {
   s3_bucket                = "packages-${var.info.name}-${var.info.env}-${local.account_id}"
   s3_key                   = "boto3==1.26.117.zip"
   layer_name               = "boto3-1_26_117"
-  description              = "python binaries for pboto3==1.26.117 library"
+  description              = "python binaries for boto3==1.26.117 library"
+  compatible_architectures = ["x86_64"]
+  compatible_runtimes      = ["python${var.info.pyversion}"]
+}
+
+resource "aws_lambda_layer_version" "utils_layer" {
+  depends_on = [aws_s3_object.move_boto3_zip]
+  # you either have to specify a local filename or the s3 object
+  # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_layer_version
+  # filename   = "lambda_layer_payload.zip"
+  s3_bucket                = "packages-${var.info.name}-${var.info.env}-${local.account_id}"
+  s3_key                   = "Utils.git@main.zip"
+  layer_name               = "utils_layer"
+  description              = "python binaries for Utils.git@main library"
   compatible_architectures = ["x86_64"]
   compatible_runtimes      = ["python${var.info.pyversion}"]
 }
 
 # make lambda function
 # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_function
-resource "aws_lambda_function" "test_lambda" {
-  depends_on = [resource.null_resource.zip_function]
+resource "aws_lambda_function" "lambda_function" {
+  # depends_on = [resource.null_resource.zip_function]
 
   filename      = "./scripts/zippedLambdaFunction/getRedditDataFunction.zip"
   function_name = "lambda-reddit-scraping-${var.info.env}"
@@ -167,11 +209,18 @@ resource "aws_lambda_function" "test_lambda" {
     size = 512 # Min 512 MB and the Max 10240 MB
   }
 
-  layers = [aws_lambda_layer_version.praw_layer.arn, aws_lambda_layer_version.boto3_layer.arn]
+  layers = [
+    aws_lambda_layer_version.praw_layer.arn, 
+    aws_lambda_layer_version.boto3_layer.arn,
+    aws_lambda_layer_version.utils_layer.arn,
+    ]
+
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
 
   environment {
     variables = {
-      AWS_BUCKET = "data-${var.info.name}-${var.info.env}-${local.account_id}"
+      AWS_BUCKET = "data-${var.info.name}-${var.info.env}-${local.account_id}",
+      ENV        = "${var.info.env}"
     }
   }
   tags = {

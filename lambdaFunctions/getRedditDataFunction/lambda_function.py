@@ -1,5 +1,5 @@
 import redditUtils as ru
-import configUtils as cu
+import viral_reddit_posts_utils.configUtils as cu
 import tableDefinition
 import praw
 import boto3
@@ -41,9 +41,8 @@ def lambda_handler(event, context):
     risingData = ru.deduplicateRedditData(risingData)
 
     # Push to DynamoDB
-    tableName = view
-    risingRawTableDefinition = tableDefinition.getTableDefinition(tableName)
-    risingTable = ru.getOrCreateTable(risingRawTableDefinition, dynamodb_resource)
+    tableName = f"{view}-{os.environ['ENV']}"
+    risingTable = ru.getTable(tableName, dynamodb_resource)
     ru.batchWriter(risingTable, risingData, schema)
 
     # Get Hot Reddit data
@@ -55,9 +54,8 @@ def lambda_handler(event, context):
     hotData = ru.deduplicateRedditData(hotData)
 
     # Push to DynamoDB
-    tableName = view
-    hotTableDefinition = tableDefinition.getTableDefinition(tableName)
-    hotTable = ru.getOrCreateTable(hotTableDefinition, dynamodb_resource)
+    tableName = f"{view}-{os.environ['ENV']}"
+    hotTable = ru.getTable(tableName, dynamodb_resource)
     ru.batchWriter(hotTable, hotData, schema)
 
   return 200

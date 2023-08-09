@@ -92,22 +92,8 @@ def deduplicateRedditData(data):
   return newData
 
 
-def getOrCreateTable(tableDefinition, dynamodb_resource):
-    existingTables = [a.name for a in dynamodb_resource.tables.all()]  # client method: dynamodb_client.list_tables()['TableNames']
-    tableName = tableDefinition['TableName']
-    if tableName not in existingTables:
-      print(f"Table {tableName} not found, creating table")
-      # create table
-      # boto3: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/dynamodb/service-resource/create_table.html#DynamoDB.ServiceResource.create_table
-      # dynamodb keyschemas and secondary indexes: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.CoreComponents.html
-      table = dynamodb_resource.create_table(**tableDefinition)
-
-      # Wait until the table exists.
-      table.wait_until_exists()
-
-    else:
-      print(f"Table {tableName} exists, grabbing table...")
-      table = dynamodb_resource.Table(tableName)
+def getTable(tableName, dynamodb_resource):
+    table = dynamodb_resource.Table(tableName)
 
     # Print out some data about the table.
     print(f"Item count in table: {table.item_count}")  # this only updates every 6 hours

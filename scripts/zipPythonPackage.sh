@@ -27,9 +27,15 @@ cd $SCRIPT_PATH
 
 for package in "$@"; do
   echo "Preparing ${package}..."
-  mkdir -p ./zippedPythonPackages/${package}/python
+  # format the zip file. needed for the git packages which have lots of slashes.
+  if [[ ${package} == "git+"* ]]; then
+    package_name=${package##*/}  # https://stackoverflow.com/questions/3162385/how-to-split-a-string-in-shell-and-get-the-last-field
+  else
+    package_name=${package}
+  fi
+  mkdir -p ./zippedPythonPackages/${package_name}/python
 
-  cd ./zippedPythonPackages/${package}/python
+  cd ./zippedPythonPackages/${package_name}/python
 
   # install binaries for package
   pip install \
@@ -43,9 +49,9 @@ for package in "$@"; do
   rm -rf *dist-info  # some cleanup of unnecessary stuff
   # zip package
   cd ..
-  rm -rf ${package}.zip # remove first if it exists
-  echo "Zipping ${package} at $(pwd)"
-  zip -r ${package}.zip python  # zip contents of python to zip name
+  rm -rf ${package_name}.zip # remove first if it exists
+  echo "Zipping ${package_name} at $(pwd)"
+  zip -r ${package_name}.zip python  # zip contents of python to zip name
   cd ../../ # go back out to scripts dir
 done
 
