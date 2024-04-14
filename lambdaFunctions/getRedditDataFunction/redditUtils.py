@@ -1,52 +1,59 @@
-from datetime import datetime
-from collections import namedtuple
+from datetime import datetime, UTC
+from collections import namedtuple, OrderedDict
 import tableDefinition
 import json
 from decimal import Decimal
 import pickle
+from praw import Reddit
 
 
-def saveTestReddit(reddit, filename):
-  pickle.dump(reddit, open(filename, 'wb'))
-
-
-def getRedditData(reddit, subreddit, topN=25, view='rising', schema=tableDefinition.schema, time_filter=None, verbose=False):
+def get_reddit_data(
+        reddit: Reddit,
+        subreddit: str,
+        top_n: int = 25,
+        view: str = 'rising',
+        schema: OrderedDict = tableDefinition.schema,
+        time_filter: str | None = None,
+        verbose: bool = False
+):
   """
   Uses PRAW to get data from reddit using defined parameters. Returns data in a list of row based data.
 
   :param reddit: PRAW reddit object
   :param subreddit: subreddit name
-  :param topN: Number of posts to return
+  :param top_n: Number of posts to return
   :param view: view to look at the subreddit. rising, top, hot
   :param schema: schema that describes the data. Dynamo is technically schema-less
   :param time_filter: range of time to look at the data. all, day, hour, month, week, year
   :param verbose: if True then prints more information
   :return: list[Row[schema]], Row is a namedtuple defined by the schema
   """
-  assert topN <= 25  # some, like rising, cap out at 25 and this also is to limit data you're working with
+  assert top_n <= 25  # some, like rising, cap out at 25 and this also is to limit data you're working with
   assert view in {'rising', 'top' , 'hot'}
-  topN += 2  # increment by 2 because of sticky posts
+  top_n += 2  # increment by 2 because of sticky posts
   if view == 'top':
     assert time_filter in {"all", "day", "hour", "month", "week", "year"}
-  subredditObject = reddit.subreddit(subreddit)
+  subreddit_object = reddit.subreddit(subreddit)
+  top_n_posts = None
   if view == 'rising':
-    topNposts = subredditObject.rising(limit=topN)
+    top_n_posts = subreddit_object.rising(limit=top_n)
   elif view == 'hot':
-    topNposts = subredditObject.hot(limit=topN)
+    top_n_posts = subreddit_object.hot(limit=top_n)
   elif view == 'top':
-    topNposts = subredditObject.top(time_filter=time_filter, limit=topN)
+    top_n_posts = subreddit_object.top(time_filter=time_filter, limit=top_n)
 
-  now = datetime.utcnow().replace(tzinfo=None, microsecond=0)
-  columns = schema.keys()
-  Row = namedtuple("Row", columns)
-  dataCollected = []
-  subscribers = subredditObject.subscribers
-  activeUsers = subredditObject.accounts_active
-  print(f'\tSubscribers: {subscribers}\n\tActive users: {activeUsers}')
-  for submission in topNposts:
+  now = datetime.now(UTC).replace(tzinfo=UTC, microsecond=0)
+  columns = list(schema.keys())
+  Row = namedtuple(typename="Row", field_names=columns)
+  data_collected = []
+  subscribers = subreddit_object.subscribers
+  active_users = subreddit_object.accounts_active
+  print(f'\tSubscribers: {subscribers}\n\tActive users: {active_users}')
+
+  for submission in top_n_posts:
     if submission.stickied:
       continue  # skip stickied posts
-    createdTSUTC = datetime.utcfromtimestamp(submission.created_utc)
+    createdTSUTC = datetime.fromtimestamp(submission.created_utc, UTC)
     timeSincePost = now - createdTSUTC
     timeElapsedMin = timeSincePost.seconds // 60
     timeElapsedDays = timeSincePost.days
@@ -60,19 +67,19 @@ def getRedditData(reddit, subreddit, topN=25, view='rising', schema=tableDefinit
     gildings = submission.gildings
     numGildings = sum(gildings.values())
     row = Row(
-      postId=postId, subreddit=subreddit, subscribers=subscribers, activeUsers=activeUsers,
+      postId=postId, subreddit=subreddit, subscribers=subscribers, activeUsers=active_users,
       title=title, createdTSUTC=str(createdTSUTC),
       timeElapsedMin=timeElapsedMin, score=score, numComments=numComments,
       upvoteRatio=upvoteRatio, numGildings=numGildings,
       loadTSUTC=str(now), loadDateUTC=str(now.date()), loadTimeUTC=str(now.time()))
-    dataCollected.append(row)
+    data_collected.append(row)
     if verbose:
       print(row)
       print()
-  return dataCollected[:topN-2]
+  return data_collected
 
 
-def deduplicateRedditData(data):
+def deduplicate_reddit_data(data):
   """
   Deduplicates the reddit data. Sometimes there are duplicate keys which throws an error
   when writing to dynamo. It is unclear why this happens but I suspect it is an issue with PRAW.
@@ -92,29 +99,15 @@ def deduplicateRedditData(data):
   return newData
 
 
-def getOrCreateTable(tableDefinition, dynamodb_resource):
-    existingTables = [a.name for a in dynamodb_resource.tables.all()]  # client method: dynamodb_client.list_tables()['TableNames']
-    tableName = tableDefinition['TableName']
-    if tableName not in existingTables:
-      print(f"Table {tableName} not found, creating table")
-      # create table
-      # boto3: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/dynamodb/service-resource/create_table.html#DynamoDB.ServiceResource.create_table
-      # dynamodb keyschemas and secondary indexes: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.CoreComponents.html
-      table = dynamodb_resource.create_table(**tableDefinition)
-
-      # Wait until the table exists.
-      table.wait_until_exists()
-
-    else:
-      print(f"Table {tableName} exists, grabbing table...")
-      table = dynamodb_resource.Table(tableName)
+def get_table(tableName, dynamodb_resource):
+    table = dynamodb_resource.Table(tableName)
 
     # Print out some data about the table.
     print(f"Item count in table: {table.item_count}")  # this only updates every 6 hours
     return table
 
 
-def batchWriter(table, data, schema):
+def batch_writer(table, data, schema):
   """
   https://boto3.amazonaws.com/v1/documentation/api/latest/guide/dynamodb.html#batch-writing
   I didn't bother with dealing with duplicates because shouldn't be a problem with this type of data

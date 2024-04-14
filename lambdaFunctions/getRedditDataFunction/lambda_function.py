@@ -1,8 +1,9 @@
 import redditUtils as ru
-import configUtils as cu
+import viral_reddit_posts_utils.configUtils as cu
 import tableDefinition
 import praw
 import boto3
+import os
 
 
 dynamodb_resource = boto3.resource('dynamodb')
@@ -10,10 +11,10 @@ dynamodb_resource = boto3.resource('dynamodb')
 
 def lambda_handler(event, context):
   # Initializations
-  subreddits = ["pics", "memes", "gaming", "worldnews", "news", "aww", "funny", "todayilearned", "movies"]
+  subreddits = ["pics", "gaming", "worldnews", "news", "aww", "funny", "todayilearned", "movies"]
 
   # cfg_file = cu.findConfig()
-  cfg_file = 's3://data-kennethmyers/reddit.cfg'
+  cfg_file = "s3://"+os.environ['AWS_BUCKET']+"/reddit.cfg" # ie 's3://data-kennethmyers/reddit.cfg'
   cfg = cu.parseConfig(cfg_file)
 
   CLIENTID = cfg['reddit_api']['CLIENTID']
@@ -36,27 +37,25 @@ def lambda_handler(event, context):
     schema = tableDefinition.schema
     topN = 25
     view = 'rising'
-    risingData = ru.getRedditData(reddit=reddit, subreddit=subreddit, view=view, schema=schema, topN=topN)
-    risingData = ru.deduplicateRedditData(risingData)
+    risingData = ru.get_reddit_data(reddit=reddit, subreddit=subreddit, view=view, schema=schema, top_n=topN)
+    risingData = ru.deduplicate_reddit_data(risingData)
 
     # Push to DynamoDB
-    tableName = view
-    risingRawTableDefinition = tableDefinition.getTableDefinition(tableName)
-    risingTable = ru.getOrCreateTable(risingRawTableDefinition, dynamodb_resource)
-    ru.batchWriter(risingTable, risingData, schema)
+    tableName = f"{view}-{os.environ['ENV']}"
+    risingTable = ru.get_table(tableName, dynamodb_resource)
+    ru.batch_writer(risingTable, risingData, schema)
 
     # Get Hot Reddit data
     print("\tGetting Hot Data")
     schema = tableDefinition.schema
     topN = 3
     view = 'hot'
-    hotData = ru.getRedditData(reddit=reddit, subreddit=subreddit, view=view, schema=schema, topN=topN)
-    hotData = ru.deduplicateRedditData(hotData)
+    hotData = ru.get_reddit_data(reddit=reddit, subreddit=subreddit, view=view, schema=schema, top_n=topN)
+    hotData = ru.deduplicate_reddit_data(hotData)
 
     # Push to DynamoDB
-    tableName = view
-    hotTableDefinition = tableDefinition.getTableDefinition(tableName)
-    hotTable = ru.getOrCreateTable(hotTableDefinition, dynamodb_resource)
-    ru.batchWriter(hotTable, hotData, schema)
+    tableName = f"{view}-{os.environ['ENV']}"
+    hotTable = ru.get_table(tableName, dynamodb_resource)
+    ru.batch_writer(hotTable, hotData, schema)
 
   return 200

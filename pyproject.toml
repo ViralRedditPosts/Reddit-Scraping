@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+# see https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
+[project]
+name = "Reddit-Scraping"
+
+dynamic = ["version"]
+
+dependencies = [
+    "boto3==1.26.117",
+    "moto[dynamodb,s3]==4.1.8",
+    "pre-commit==2.21.0",
+    "praw==7.7.0",
+    "pytest==7.3.1",
+    "pytest-cov==4.0.0",
+    "viral_reddit_posts_utils@git+https://github.com/ViralRedditPosts/Utils.git@main"
+]
+
+requires-python = "== 3.12.3"
+
+authors = [
+  {name = "Kenneth Myers", email = "myers.kenneth.james@gmail.com"},
+]
+
+description = "This project scrapes Reddit data and loads it to a DynamoDB. It is intended to be run through an AWS Lambda function."
+
+readme = "README.md"
+
+
+
+
