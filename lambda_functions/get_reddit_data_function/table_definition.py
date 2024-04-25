@@ -18,7 +18,7 @@ schema["numComments"] = "N"
 schema["upvoteRatio"] = "N"
 schema["numGildings"] = "N"
 
-baseTableDefinition = dict(
+base_table_definition = dict(
   AttributeDefinitions=[
     {
       'AttributeName': k,
@@ -71,6 +71,6 @@ baseTableDefinition = dict(
 )
 
 
-def getTableDefinition(tableName, tableDefintion = baseTableDefinition):
+def get_table_definition(tableName, tableDefintion = base_table_definition):
   tableDefintion['TableName'] = tableName
   return tableDefintion

@@ -124,7 +124,7 @@ class TestBatchWriter:
     dynamodb = boto3.resource('dynamodb', region_name='us-east-2')
     # create table and write to sample data
     table_name = 'rising'
-    td = table_definition.getTableDefinition(tableName=table_name)
+    td = table_definition.get_table_definition(tableName=table_name)
     self.test_table = dynamodb.create_table(**td)
     self.schema = table_definition.schema
     self.columns = self.schema.keys()
