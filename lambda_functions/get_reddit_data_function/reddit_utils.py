@@ -1,6 +1,6 @@
 from datetime import datetime, UTC
 from collections import namedtuple, OrderedDict
-import tableDefinition
+import table_definition
 import json
 from decimal import Decimal
 import pickle
@@ -12,7 +12,7 @@ def get_reddit_data(
         subreddit: str,
         top_n: int = 25,
         view: str = 'rising',
-        schema: OrderedDict = tableDefinition.schema,
+        schema: OrderedDict = table_definition.schema,
         time_filter: str | None = None,
         verbose: bool = False
 ):

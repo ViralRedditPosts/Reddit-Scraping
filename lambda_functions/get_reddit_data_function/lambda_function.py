@@ -1,6 +1,6 @@
-import redditUtils as ru
+import reddit_utils as ru
 import viral_reddit_posts_utils.configUtils as cu
-import tableDefinition
+import table_definition
 import praw
 import boto3
 import os
@@ -34,7 +34,7 @@ def lambda_handler(event, context):
     print(f"Gathering data for {subreddit}")
     # Get Rising Reddit data
     print("\tGetting Rising Data")
-    schema = tableDefinition.schema
+    schema = table_definition.schema
     topN = 25
     view = 'rising'
     risingData = ru.get_reddit_data(reddit=reddit, subreddit=subreddit, view=view, schema=schema, top_n=topN)
@@ -47,7 +47,7 @@ def lambda_handler(event, context):
 
     # Get Hot Reddit data
     print("\tGetting Hot Data")
-    schema = tableDefinition.schema
+    schema = table_definition.schema
     topN = 3
     view = 'hot'
     hotData = ru.get_reddit_data(reddit=reddit, subreddit=subreddit, view=view, schema=schema, top_n=topN)

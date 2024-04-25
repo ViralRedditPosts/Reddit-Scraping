@@ -20,11 +20,11 @@ SCRIPT_PATH=${0%/*}  # https://stackoverflow.com/questions/6393551/what-is-the-m
 CWD=${pwd}
 cd $SCRIPT_PATH
 
-[ -d "../lambdaFunctions/${function_name}" ] && echo "Directory ../lambdaFunctions/${function_name} exists." || { echo "Error: Directory ../lambdaFunctions/${function_name} does not exist."; exit 1; }
+[ -d "../lambda_functions/${function_name}" ] && echo "Directory ../lambda_functions/${function_name} exists." || { echo "Error: Directory ../lambda_functions/${function_name} does not exist."; exit 1; }
 
 cd ./zippedLambdaFunction/
 rm -r ./${function_name} || true
-cp -r ../../lambdaFunctions/${function_name} ./  # copy lambda function files here
+cp -r ../../lambda_functions/${function_name} ./  # copy lambda function files here
 rm -rf ${function_name}.zip # remove first if it exists
 cd ./${function_name}/  # for some reason you have to zip from within this folder or it wont work, it otherwise wraps it in another folder
 #rm -rf ./*.ipynb*  # remove any notebook stuff

@@ -1,14 +1,11 @@
 from datetime import datetime, UTC, timedelta
 import pytest
-import redditUtils as ru
+import reddit_utils as ru
 import praw
-import tableDefinition
+import table_definition
 from collections import namedtuple
 import boto3
-import sys
 import os
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(THIS_DIR, '../../'))
 import viral_reddit_posts_utils.configUtils as cu
 from moto import mock_dynamodb
 from unittest.mock import patch, Mock
@@ -80,7 +77,7 @@ def test_get_reddit_data(
     subreddit,
     top_n=25,
     view='rising',
-    schema=tableDefinition.schema,
+    schema=table_definition.schema,
     time_filter=None,
     verbose=True
   )
@@ -94,7 +91,7 @@ def test_get_reddit_data(
 
 @pytest.fixture(scope='module')
 def duplicated_data():
-  schema = tableDefinition.schema
+  schema = table_definition.schema
   columns = list(schema.keys())
   Row = namedtuple(typename="Row", field_names=columns)
   # these are identical examples except one has a later loadTSUTC
@@ -127,24 +124,26 @@ class TestBatchWriter:
     dynamodb = boto3.resource('dynamodb', region_name='us-east-2')
     # create table and write to sample data
     table_name = 'rising'
-    td = tableDefinition.getTableDefinition(tableName=table_name)
-    self.testTable = dynamodb.create_table(**td)
-    self.schema = tableDefinition.schema
+    td = table_definition.getTableDefinition(tableName=table_name)
+    self.test_table = dynamodb.create_table(**td)
+    self.schema = table_definition.schema
     self.columns = self.schema.keys()
     self.Row = namedtuple(typename="Row", field_names=self.columns)
 
   @pytest.mark.xfail(reason="BatchWriter fails on duplicate keys. This might xpass, possibly a fault in mock object.")
   def test_duplicate_data(self):
     self.class_set_up()
-    testTable = self.testTable
+    testTable = self.test_table
     schema = self.schema
     Row=self.Row
 
     data = [
-      Row(loadDateUTC='2023-04-30', loadTimeUTC='05:03:44', loadTSUTC='2023-04-30 05:03:44', postId='133fkqz',
+      Row(subscribers=10000000, activeUsers=10000,
+          loadDateUTC='2023-04-30', loadTimeUTC='05:03:44', loadTSUTC='2023-04-30 05:03:44', postId='133fkqz',
          subreddit='pics', title='Magnolia tree blooming in my friends yard', createdTSUTC='2023-04-30 04:19:43',
          timeElapsedMin=44, score=3, numComments=0, upvoteRatio=1.0, numGildings=0),
-      Row(loadDateUTC='2023-04-30', loadTimeUTC='05:03:44', loadTSUTC='2023-04-30 05:03:44', postId='133fkqz',
+      Row(subscribers=10000000, activeUsers=10000,
+          loadDateUTC='2023-04-30', loadTimeUTC='05:03:44', loadTSUTC='2023-04-30 05:03:44', postId='133fkqz',
           subreddit='pics', title='Magnolia tree blooming in my friends yard', createdTSUTC='2023-04-30 04:19:43',
           timeElapsedMin=44, score=3, numComments=0, upvoteRatio=1.0, numGildings=0)
      ]
@@ -153,7 +152,7 @@ class TestBatchWriter:
 
   def test_unique_data(self):
     self.class_set_up()
-    testTable = self.testTable
+    test_table = self.test_table
     schema = self.schema
     Row = self.Row
 
@@ -167,12 +166,12 @@ class TestBatchWriter:
           subreddit='pics', title='A piece of wood sticking up in front of a fire.', createdTSUTC='2023-04-30 04:29:23',
           timeElapsedMin=34, score=0, numComments=0, upvoteRatio=0.4, numGildings=0)
     ]
-    ru.batch_writer(table=testTable, data=data, schema=schema)
+    ru.batch_writer(table=test_table, data=data, schema=schema)
     print("uniqueDataTester test complete")
 
   def test_diff_primary_index_same_second_index(self):
     self.class_set_up()
-    test_table = self.testTable
+    test_table = self.test_table
     schema = self.schema
     Row = self.Row
 
